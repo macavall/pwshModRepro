@@ -143,14 +143,57 @@ Remove the bundled module and let the platform manage it:
    }
    ```
 
-**Option 2 — Re-bundle a clean module copy.** Download an intact module and copy it
-into `Modules/`:
+**Option 2 — Re-bundle a clean module copy (the fix applied in this repo).**
+Replace the corrupt bundled module with an intact copy of the *same version* from
+the PowerShell Gallery.
+
+Run from the project root (`proj3/`):
 
 ```powershell
-Save-Module -Name PnP.PowerShell -RequiredVersion 1.5.0 -Path .\Modules
+$modules = Join-Path $PWD 'Modules'
+
+# 1. Remove the corrupt bundled module
+Remove-Item (Join-Path $modules 'PnP.PowerShell') -Recurse -Force
+
+# 2. Save a clean copy of the exact same version into .\Modules
+Save-Module -Name PnP.PowerShell -RequiredVersion 1.5.0 -Path $modules -Force
 ```
 
-Then re-validate the format file with the XML check in step 1.
+Then re-validate the format file with the XML check from step 1:
+
+```powershell
+try {
+    [xml](Get-Content .\Modules\PnP.PowerShell\1.5.0\PnP.PowerShell.Format.ps1xml -Raw) | Out-Null
+    'XML: valid (well-formed)'
+} catch {
+    "XML: CORRUPT -> $($_.Exception.Message)"
+}
+```
+
+And confirm the command now resolves from a clean session that only sees this
+module path:
+
+```powershell
+pwsh -NoProfile -Command {
+    $env:PSModulePath = "$PWD\Modules;$env:PSModulePath"
+    $cmd = Get-Command Connect-PnPOnline -ErrorAction Stop
+    "Connect-PnPOnline: available (from module $($cmd.ModuleName) $($cmd.Version))"
+}
+```
+
+Expected output:
+
+```
+XML: valid (well-formed)
+Connect-PnPOnline: available (from module PnP.PowerShell 1.5.0)
+```
+
+> After this fix the stub repro files (a hand-written `.psm1`/`.psd1` and the
+> truncated `.ps1xml`) are replaced by the real module contents
+> (`Common/`, `Core/`, `Framework/`, `PnP.PowerShell.dll-Help.xml`, a valid
+> `.ps1xml`, and the real manifest). At runtime `Connect-PnPOnline` will now reach
+> the authentication stage instead of failing to load — confirming the
+> module-load problem is resolved.
 
 ### 3. Redeploy and verify
 
